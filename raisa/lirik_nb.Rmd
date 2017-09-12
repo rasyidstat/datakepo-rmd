@@ -1,0 +1,162 @@
+---
+title: "Lirik Lagu Raisa"
+author: "Rasyid Ridha"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.path = "figs/", warning = FALSE, message = FALSE)
+```
+
+```{r library}
+library(tidyverse)
+library(tidytext)
+library(extrafont)
+# devtools::install_github("rasyidstat/mrSQ")
+library(mrSQ)
+loadfonts(quiet = TRUE)
+
+# load data
+load("data/df_raisa.Rda")
+df <- df %>%
+  select(-link, -source) %>%
+  mutate(txt=gsub("'", "'", txt))
+sw <- readLines("sw.txt", warn=FALSE) %>%
+  data_frame(word=.)
+df
+```
+
+## Overview
+
+```{r, include=FALSE}
+n_music <- n_distinct(df$title)
+df_music <- df %>%
+  mutate(word = stringr::str_count(txt, "\\w+"),
+         title = gsub(" \\(.*", "", title)) %>%
+  group_by(title) %>%
+  summarise(p = max(p),
+            l = max(l),
+            w = sum(word))
+```
+
+```{r}
+RColorBrewer::brewer.pal(9, "PuBu")
+RColorBrewer::brewer.pal(11, "PiYG")
+```
+
+```{r}
+df_music %>%
+  top_n(15, w) %>%
+  ggplot(aes(reorder(title, w), w)) + geom_col(fill="#74A9CF") + 
+  coord_flip() + theme_din(grid="X") +
+  labs(x=NULL, y=NULL) +
+  scale_y_continuous(expand=c(0.01,0))
+#A6BDDB
+```
+
+## Data Wrangle
+
+```{r token}
+df_token <- df %>%
+  unnest_tokens(word, txt) %>%
+  anti_join(sw) %>%
+  anti_join(stop_words) %>%
+  filter(nchar(word) >= 3, !grepl("you", word)) %>%
+  mutate(word = ifelse(grepl("^[a-z]{3,}mu$", word), gsub("mu$", "", word), word))
+
+df_word <- df_token %>%
+  count(word) %>%
+  arrange(-n)
+
+df_token_bigram <- df %>%
+  unnest_tokens(token, txt, token="ngrams", n=2) %>%
+  count(token, sort=TRUE) 
+```
+
+```{r, eval=FALSE, include=FALSE}
+RColorBrewer::brewer.pal.info
+```
+
+## Wordcloud
+
+```{r wordcloud}
+library(wordcloud)
+# png("raisa.png", width=6, height=3.5, units="in", res=300)
+wordcloud(df_word$word, df_word$n,
+          random.order = FALSE,
+          random.color = FALSE,
+          max.words = 70,
+          colors=brewer.pal(8, "BuPu"),
+          family="DIN")
+# dev.off()
+```
+
+## TF-IDF
+
+```{r, fig.width=12, fig.height=16}
+df_token2 <- df %>%
+  unnest_tokens(word, txt) %>%
+  mutate(word = ifelse(grepl("^[a-z]{3,}mu$", word), gsub("mu$", "", word), word)) %>%
+  count(title, word, sort=TRUE) %>%
+  group_by(title) %>%
+  mutate(total=sum(n)) %>%
+  ungroup()
+# ggplot(df_token2, aes(n/total, fill = title)) +
+#   geom_histogram(alpha = 0.8, show.legend = FALSE) +
+#   facet_wrap(~title, scales = "free_y") +
+#   theme_din() +
+#   labs(y=NULL)
+```
+
+```{r, eval=FALSE, include=FALSE}
+df_token2 %>%
+  select(word) %>%
+  filter(grepl("^[a-z]{3,}mu$", word))
+```
+
+```{r}
+df_tfidf <- df_token2 %>%
+  bind_tf_idf(word, title, n) %>%
+  anti_join(sw) %>%
+  anti_join(stop_words) %>%
+  filter(nchar(word) >= 3, !grepl("you", word))
+# paste(strwrap("Ini adalah teks yang sangat panjang sekali loh! Hahahahaha", 35), collapse="\n")
+df_tfidf %>%
+  mutate(title = gsub(" \\(.*", "", title)) %>%
+  top_n(20, tf_idf) %>%
+  arrange(-tf_idf) %>%
+  ggplot(aes(reorder(word, tf_idf), tf_idf, fill=title)) + geom_col() +
+  coord_flip() + theme_din(grid="X") +
+  labs(x=NULL, y=NULL) +
+  scale_y_continuous(expand=c(0.01,0)) +
+  scale_fill_discrete(NULL) 
+  # theme(legend.justification=c(1,0), legend.position=c(1,0))
+  # viridis::scale_fill_viridis(NULL, end=0.8, discrete=TRUE)
+```
+
+## Network Graph
+
+```{r, fig.width=7, fig.height=5}
+library(igraph)
+library(ggraph)
+# devtools::install_github("dgrtwo/widyr")
+library(widyr)
+
+df_pair <- df_token %>%
+  pairwise_count(word, l, sort=TRUE)
+
+df_graph <- df_pair %>%
+  filter(n >= 10) %>%
+  graph_from_data_frame()
+V(df_graph)$freq <- degree(df_graph, mode = "all")
+
+set.seed(17)
+df_graph %>%
+  ggraph(layout = "fr") +
+  geom_edge_fan(aes(edge_width = n), alpha = 0.1, show.legend = FALSE) +
+  geom_node_point(color = "#8C6BB1", aes(size = freq), show.legend = FALSE) +
+  geom_node_text(aes(label = name, size = freq), vjust = 2, family = "DIN", show.legend = FALSE) +
+  scale_size(range = c(3.5,6.5)) +
+  theme_void()
+```
+
