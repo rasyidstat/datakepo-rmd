@@ -19,8 +19,7 @@ loadfonts(quiet = TRUE)
 # load data
 load("data/df_raisa.Rda")
 df <- df %>%
-  select(-link, -source) %>%
-  mutate(txt=gsub("'", "'", txt))
+  select(-link, -source) 
 sw <- readLines("sw.txt", warn=FALSE) %>%
   data_frame(word=.)
 df
@@ -62,7 +61,9 @@ df_token <- df %>%
   anti_join(sw) %>%
   anti_join(stop_words) %>%
   filter(nchar(word) >= 3, !grepl("you", word)) %>%
-  mutate(word = ifelse(grepl("^[a-z]{3,}mu$", word), gsub("mu$", "", word), word))
+  mutate(word = ifelse(grepl("^[a-z]{3,}mu$", word), gsub("mu$", "", word), word),
+         word = ifelse(grepl("^[a-z]{3,}ku$", word), gsub("ku$", "", word), word),
+         word = ifelse(grepl("^[a-z]{3,}nya$", word), gsub("nya$", "", word), word))
 
 df_word <- df_token %>%
   count(word) %>%
@@ -81,14 +82,31 @@ RColorBrewer::brewer.pal.info
 
 ```{r wordcloud}
 library(wordcloud)
-# png("raisa.png", width=6, height=3.5, units="in", res=300)
+png("raisa.png", width=6, height=3.5, units="in", res=300)
 wordcloud(df_word$word, df_word$n,
           random.order = FALSE,
           random.color = FALSE,
           max.words = 70,
           colors=brewer.pal(8, "BuPu"),
           family="DIN")
-# dev.off()
+dev.off()
+```
+
+```{r}
+df_token %>%
+  count(title, word) %>%
+  group_by(title) %>%
+  mutate(p = n/sum(n)) %>%
+  top_n(1, n) %>%
+  filter(word %in% c("cinta","love")) %>%
+  arrange(-p) %>%
+  mutate(p = scales::percent(p))
+```
+
+```{r}
+df_token %>%
+  count(title, word) %>%
+  filter(word %in% c("cinta","love"))
 ```
 
 ## TF-IDF
@@ -96,7 +114,9 @@ wordcloud(df_word$word, df_word$n,
 ```{r, fig.width=12, fig.height=16}
 df_token2 <- df %>%
   unnest_tokens(word, txt) %>%
-  mutate(word = ifelse(grepl("^[a-z]{3,}mu$", word), gsub("mu$", "", word), word)) %>%
+  mutate(word = ifelse(grepl("^[a-z]{3,}mu$", word), gsub("mu$", "", word), word),
+         word = ifelse(grepl("^[a-z]{3,}ku$", word), gsub("ku$", "", word), word),
+         word = ifelse(grepl("^[a-z]{3,}nya$", word), gsub("nya$", "", word), word)) %>%
   count(title, word, sort=TRUE) %>%
   group_by(title) %>%
   mutate(total=sum(n)) %>%
